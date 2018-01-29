@@ -68,6 +68,17 @@ function M:state(name, alias)
 	act[id] = { act = "state", name = name, alias = alias }
 end
 
+function M:jump(target)
+	local id = self.idx + 1
+	self.idx = id
+	local act = self.action
+	local id = #act + 1
+	if not alias then
+		name = format("jump%s", id)
+	end
+	act[id] = { act = "jump", name = name, target = target }
+end
+
 function branch(self, name, alias, fall, jmp, target)
 	local act = self.action
 	if not alias then
@@ -100,6 +111,31 @@ local function drawcluster(name, item)
 	return format("\t%s_%s->%s_start;", name, item.name, item.call)
 end
 
+local function findtarget(act, i, target)
+	local count = #act
+	local find
+	local k = i
+	for n = 1, count do
+		local j = k % count
+		local n = act[j + 1]
+		if n.name:find(target) then
+			find = n
+			break
+		end
+		k = k+1
+	end
+	return find, k
+end
+
+local function followtarget(act, i)
+	local follow = act[i+1]
+	if follow.act == "jump" then
+		local target = follow.target
+		follow = findtarget(act, i, target)
+	end
+	return follow
+end
+
 local drawtype = {
 	["barrier"] = function(name, item, i, act)
 		local follow = act[i+1]
@@ -110,27 +146,19 @@ local drawtype = {
 		return part
 	end,
 	["call"] = function(name, item, i, act)
-		local follow = act[i+1]
+		local follow = followtarget(act, i)
 		return format('\t\t%s_%s [shape=box, fillcolor=yellow, label="%s"];\n\t\t%s_%s->%s_%s;', name, item.name, item.alias, name, item.name, name, follow.name)
 	end,
 	["state"] = function(name, item, i, act)
-		local follow = act[i+1]
+		local follow = followtarget(act, i)
 		return format('\t\t%s_%s [shape=box , label="%s"];\n\t\t%s_%s->%s_%s;', name, item.name, item.alias, name, item.name, name, follow.name)
 	end,
+	["jump"] = function(name, item)
+		return ""
+	end,
 	["branch"] = function(name, item, i, act)
-		local follow = act[i+1]
-		local count = #act
-		local target
-		local k = i
-		for n = 1, count do
-			local j = k % count
-			local n = act[j + 1]
-			if n.name:find(item.target) then
-				target = n
-				break
-			end
-			k = k+1
-		end
+		local follow = followtarget(act, i)
+		local target = findtarget(act, i, item.target)
 		assert(target, item.target)
 		return format('\t\t%s_%s [shape=diamond, label="%s"];\n\t\t%s_%s->%s_%s[label="%s"];\n\t\t%s_%s -> %s_%s[label="%s"];',
 			name, item.name, item.alias, name, item.name, name, follow.name, item.fall, name, item.name, name, target.name, item.jmp)
