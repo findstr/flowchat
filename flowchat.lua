@@ -68,14 +68,22 @@ function M:state(name, alias)
 	act[id] = { act = "state", name = name, alias = alias }
 end
 
-function M:branch(name, fail, alias)
+function branch(self, name, alias, fall, jmp, target)
 	local act = self.action
 	if not alias then
 		alias = name
 	else
 		alias = format("%s(%s)", alias, name)
 	end
-	act[#act + 1] = { act = "branch", name = name, alias = alias, fail = fail}
+	act[#act + 1] = { act = "branch", name = name, alias = alias, target = target, fall = fall, jmp = jmp}
+end
+
+function M:branchN(name, fail, alias)
+	return branch(self, name, alias, "Y", "N", fail)
+end
+
+function M:branchY(name, success, alias)
+	return branch(self, name, alias, "N", "Y", success)
 end
 
 function M:switch(name, mux, alias)
@@ -93,22 +101,39 @@ local function drawcluster(name, item)
 end
 
 local drawtype = {
-	["barrier"] = function(name, item, follow)
+	["barrier"] = function(name, item, i, act)
+		local follow = act[i+1]
 		local part = format('\t\t%s_%s [shape=ellipse, label="%s"];',name, item.name, item.alias)
 		if follow then
 			part = part .. format('\n\t\t%s_%s->%s_%s;',  name, item.name, name, follow.name)
 		end
 		return part
 	end,
-	["call"] = function(name, item, follow)
+	["call"] = function(name, item, i, act)
+		local follow = act[i+1]
 		return format('\t\t%s_%s [shape=box, fillcolor=yellow, label="%s"];\n\t\t%s_%s->%s_%s;', name, item.name, item.alias, name, item.name, name, follow.name)
 	end,
-	["state"] = function(name, item, follow)
+	["state"] = function(name, item, i, act)
+		local follow = act[i+1]
 		return format('\t\t%s_%s [shape=box , label="%s"];\n\t\t%s_%s->%s_%s;', name, item.name, item.alias, name, item.name, name, follow.name)
 	end,
-	["branch"] = function(name, item, follow)
-		return format('\t\t%s_%s [shape=diamond, label="%s"];\n\t\t%s_%s->%s_%s[label="Y"];\n\t\t%s_%s -> %s_%s[label="N"];',
-			name, item.name, item.alias, name, item.name, name, follow.name, name, item.name, name, item.fail)
+	["branch"] = function(name, item, i, act)
+		local follow = act[i+1]
+		local count = #act
+		local target
+		local k = i
+		for n = 1, count do
+			local j = k % count
+			local n = act[j + 1]
+			if n.name:find(item.target) then
+				target = n
+				break
+			end
+			k = k+1
+		end
+		assert(target, item.target)
+		return format('\t\t%s_%s [shape=diamond, label="%s"];\n\t\t%s_%s->%s_%s[label="%s"];\n\t\t%s_%s -> %s_%s[label="%s"];',
+			name, item.name, item.alias, name, item.name, name, follow.name, item.fall, name, item.name, name, target.name, item.jmp)
 	end,
 	["switch"] = function(name, item)
 		local tbl = {}
@@ -145,7 +170,7 @@ function M:draw(output, tail)
 	output[#output + 1] = format("\tsubgraph cluster_%s {", self.name)
 	output[#output + 1] = format('\t\tlabel = "%s";', self.name)
 	for i, v in ipairs(act) do
-		output[#output + 1] = assert(drawtype[v.act])(name, v, act[i+1])
+		output[#output + 1] = assert(drawtype[v.act])(name, v, i, act)
 		if v.act == "call" then
 			tail[#tail + 1] = drawcluster(name, v)
 		elseif v.act == "switch" then
