@@ -214,7 +214,22 @@ function M:draw(output, tail)
 end
 
 function M:drawall(output, tail)
+	local act = self.action
 	local depend = self.depend
+	for i, v in ipairs(act) do
+		if v.act == "switch" then
+			for _, m in ipairs(v.mux) do
+				local call = m.call
+				if call then
+					local ok, err = pcall(require, call)
+					if not ok and err:find("error") then
+						assert(false, err)
+					end
+					depend[#depend + 1] = call
+				end
+			end
+		end
+	end
 	for _, d in ipairs(depend) do
 		local f = LOADED[d]
 		if f and f.dirty then
